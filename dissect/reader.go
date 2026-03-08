@@ -18,20 +18,21 @@ import (
 var strSep = []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
 type Reader struct {
-	b                        []byte
-	offset                   int
-	queries                  [][]byte
-	listeners                [][]func(r *Reader) error
-	time                     float64 // in seconds
-	timeRaw                  string  // raw dissect format
-	lastDefuserPlayerIndex   int
-	planted                  bool
-	readPartial              bool // reads up to the player info packets
-	playersRead              int
-	lastKillerFromScoreboard string
-	Header                   Header        `json:"header"`
-	MatchFeedback            []MatchUpdate `json:"matchFeedback"`
-	Scoreboard               Scoreboard
+	b                      []byte
+	offset                 int
+	queries                [][]byte
+	listeners              [][]func(r *Reader) error
+	time                   float64 // in seconds
+	timeRaw                string  // raw dissect format
+	lastDefuserPlayerIndex int
+	lastDefuserTimer       float64
+	defuserDisabling       bool
+	planted                bool
+	readPartial            bool // reads up to the player info packets
+	playersRead            int
+	Header                 Header        `json:"header"`
+	MatchFeedback          []MatchUpdate `json:"matchFeedback"`
+	Scoreboard             Scoreboard
 }
 
 // NewReader decompresses in using zstd and

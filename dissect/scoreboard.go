@@ -8,12 +8,12 @@ type Scoreboard struct {
 
 type ScoreboardPlayer struct {
 	ID               []byte
+	Kills            uint32
 	Score            uint32
 	Assists          uint32
 	AssistsFromRound uint32
 }
 
-// this function fixes kills that were previously recorded as elims
 func readScoreboardKills(r *Reader) error {
 	kills, err := r.Uint32()
 	if err != nil {
@@ -29,7 +29,7 @@ func readScoreboardKills(r *Reader) error {
 	idx := r.PlayerIndexByID(id)
 	if idx != -1 {
 		username := r.Header.Players[idx].Username
-		r.lastKillerFromScoreboard = username
+		r.Scoreboard.Players[idx].Kills = kills
 		log.Warn().
 			Str("username", username).
 			Uint32("kills", kills).

@@ -2,6 +2,7 @@ package dissect
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -43,10 +44,98 @@ func readY7Time(r *Reader) error {
 	return nil
 }
 
+func (r *Reader) reconcileKillsWithScoreboard() {
+	parsedKills := make(map[string]int, len(r.Header.Players))
+	scoreboardKills := make(map[string]int, len(r.Header.Players))
+	playerByUsername := make(map[string]Player, len(r.Header.Players))
+	killIndexesByUsername := make(map[string][]int, len(r.Header.Players))
+
+	for i, p := range r.Header.Players {
+		playerByUsername[p.Username] = p
+		if i < len(r.Scoreboard.Players) {
+			scoreboardKills[p.Username] = int(r.Scoreboard.Players[i].Kills)
+		}
+	}
+	for i, update := range r.MatchFeedback {
+		if update.Type != Kill {
+			continue
+		}
+		parsedKills[update.Username]++
+		killIndexesByUsername[update.Username] = append(killIndexesByUsername[update.Username], i)
+	}
+
+	missingKills := make(map[string]int)
+	surplusKills := make(map[string]int)
+	for _, p := range r.Header.Players {
+		username := p.Username
+		diff := scoreboardKills[username] - parsedKills[username]
+		if diff > 0 {
+			missingKills[username] = diff
+		} else if diff < 0 {
+			surplusKills[username] = -diff
+		}
+	}
+	if len(missingKills) == 0 || len(surplusKills) == 0 {
+		return
+	}
+
+	for username, surplus := range surplusKills {
+		indexes := killIndexesByUsername[username]
+		for i := len(indexes) - 1; i >= 0 && surplus > 0; i-- {
+			killIndex := indexes[i]
+			update := &r.MatchFeedback[killIndex]
+			killer := playerByUsername[update.Username]
+			target := playerByUsername[update.Target]
+			if killer.Username == "" || target.Username == "" {
+				continue
+			}
+
+			candidates := make([]string, 0)
+			for candidate, missing := range missingKills {
+				if missing == 0 {
+					continue
+				}
+				player := playerByUsername[candidate]
+				if player.Username == "" || player.TeamIndex != killer.TeamIndex || candidate == update.Username {
+					continue
+				}
+				candidates = append(candidates, candidate)
+			}
+			if len(candidates) == 0 {
+				continue
+			}
+			slices.SortFunc(candidates, func(a, b string) int {
+				if missingKills[a] != missingKills[b] {
+					return missingKills[b] - missingKills[a]
+				}
+				return strings.Compare(a, b)
+			})
+
+			replacement := candidates[0]
+			replacementPlayer := playerByUsername[replacement]
+			if replacementPlayer.TeamIndex == target.TeamIndex {
+				continue
+			}
+
+			log.Debug().
+				Str("from", update.Username).
+				Str("to", replacement).
+				Str("target", update.Target).
+				Msg("reconciled_kill_with_scoreboard")
+			update.Username = replacement
+			missingKills[replacement]--
+			surplus--
+		}
+	}
+}
+
 func (r *Reader) roundEnd() {
 	log.Debug().Msg("round_end")
 
+	r.reconcileKillsWithScoreboard()
+
 	planter := -1
+	scoreWinner := -1
 	deaths := make(map[int]int)
 	sizes := make(map[int]int)
 	roles := make(map[int]TeamRole)
@@ -60,6 +149,11 @@ func (r *Reader) roundEnd() {
 		team0Won := r.Header.Teams[0].StartingScore < r.Header.Teams[0].Score
 		r.Header.Teams[0].Won = team0Won
 		r.Header.Teams[1].Won = !team0Won
+		if team0Won {
+			scoreWinner = 0
+		} else {
+			scoreWinner = 1
+		}
 	}
 
 	for _, u := range r.MatchFeedback {
@@ -67,10 +161,6 @@ func (r *Reader) roundEnd() {
 		case Kill:
 			i := r.Header.Players[r.PlayerIndexByUsername(u.Target)].TeamIndex
 			deaths[i] = deaths[i] + 1
-			// fix killer username
-			if len(u.usernameFromScoreboard) > 0 {
-				u.Username = u.usernameFromScoreboard
-			}
 			break
 		case Death:
 			i := r.Header.Players[r.PlayerIndexByUsername(u.Username)].TeamIndex
@@ -82,14 +172,23 @@ func (r *Reader) roundEnd() {
 		case DefuserDisableComplete:
 			i := r.Header.Players[r.PlayerIndexByUsername(u.Username)].TeamIndex
 			r.Header.Teams[i].Won = true
+			r.Header.Teams[i^1].Won = false
 			r.Header.Teams[i].WinCondition = DisabledDefuser
 			return
 		}
 	}
 
 	if planter > -1 {
-		r.Header.Teams[r.Header.Players[planter].TeamIndex].Won = true
-		r.Header.Teams[r.Header.Players[planter].TeamIndex].WinCondition = DefusedBomb
+		planterTeam := r.Header.Players[planter].TeamIndex
+		if scoreWinner == -1 || scoreWinner == planterTeam {
+			r.Header.Teams[planterTeam].Won = true
+			r.Header.Teams[planterTeam^1].Won = false
+			r.Header.Teams[planterTeam].WinCondition = DefusedBomb
+			return
+		}
+		r.Header.Teams[scoreWinner].Won = true
+		r.Header.Teams[scoreWinner^1].Won = false
+		r.Header.Teams[scoreWinner].WinCondition = DisabledDefuser
 		return
 	}
 
