@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"go/types"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -70,14 +71,18 @@ func parseOpConst(c *types.Const) (op dissect.Operator, err error) {
 	return dissect.Operator(v), nil
 }
 
-const (
-	packageName      string = "github.com/redraskal/r6-dissect/dissect"
-	operatorTypeName string = "Operator"
-)
+const operatorTypeName string = "Operator"
 
 func loadPackage() (*packages.Package, error) {
-	cfg := &packages.Config{Mode: packages.NeedTypes | packages.NeedTypesInfo}
-	pkgs, err := packages.Load(cfg, "pattern="+packageName)
+	dir, err := filepath.Abs("..")
+	if err != nil {
+		return nil, err
+	}
+	cfg := &packages.Config{
+		Dir:  dir,
+		Mode: packages.NeedTypes | packages.NeedTypesInfo,
+	}
+	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +91,7 @@ func loadPackage() (*packages.Package, error) {
 		return nil, errors.New("got error loading package")
 	}
 	if len(pkgs) == 0 {
-		return nil, fmt.Errorf(`found no package "%s"`, packageName)
+		return nil, fmt.Errorf(`found no package in "%s"`, dir)
 	}
 	return pkgs[0], nil
 }
@@ -115,7 +120,7 @@ func getOperatorDefs(pkg *packages.Package) ([]*types.Const, error) {
 	}
 
 	if len(operatorDefs) == 0 {
-		return nil, fmt.Errorf(`found no consts of type "%s" in package "%s"`, operatorTypeName, packageName)
+		return nil, fmt.Errorf(`found no consts of type "%s" in loaded package`, operatorTypeName)
 	}
 	return operatorDefs, nil
 }
