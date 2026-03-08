@@ -7,6 +7,14 @@ import (
 	"github.com/redraskal/r6-dissect/dissect/ubi"
 )
 
+func normalizeOperatorName(name string) string {
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, "-", "")
+	name = strings.ReplaceAll(name, "_", "")
+	name = strings.ReplaceAll(name, " ", "")
+	return name
+}
+
 func Test_operatorsMissing(tt *testing.T) {
 	ourOpNames, ubiOpNames := assembleOperatorNames(tt)
 
@@ -48,7 +56,7 @@ func assembleOperatorNames(tt *testing.T) (us []string, ubisoft []string) {
 			recruitFound = true
 			continue
 		}
-		ourOpNames[i] = strings.ToLower(c.Name())
+		ourOpNames[i] = normalizeOperatorName(c.Name())
 		i++
 	}
 
@@ -63,7 +71,7 @@ func assembleOperatorNames(tt *testing.T) (us []string, ubisoft []string) {
 	ubiOpNames := make([]string, len(ubiOpsMap))
 	i = 0
 	for n := range ubiOpsMap {
-		ubiOpNames[i] = strings.ToLower(n)
+		ubiOpNames[i] = normalizeOperatorName(n)
 		i++
 	}
 	return ourOpNames, ubiOpNames

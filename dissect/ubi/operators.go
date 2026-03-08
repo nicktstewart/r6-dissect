@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"golang.org/x/net/html"
 )
@@ -16,6 +17,14 @@ type Operator struct {
 }
 
 const ubiOperatorsURL string = "https://www.ubisoft.com/de-de/game/rainbow-six/siege/game-info/operators"
+
+func normalizeOperatorSlug(name string) string {
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, "-", "")
+	name = strings.ReplaceAll(name, "_", "")
+	name = strings.ReplaceAll(name, " ", "")
+	return name
+}
 
 // GetOperatorMap queries an official Ubisoft resource, mapping operator names to operator metadata
 func GetOperatorMap() (opNames map[string]Operator, err error) {
@@ -47,9 +56,11 @@ func GetOperatorMap() (opNames map[string]Operator, err error) {
 	// convert list to map
 	opNames = map[string]Operator{}
 	for _, op := range operatorsJSON {
-		opNames[op.Slug] = Operator{
+		meta := Operator{
 			IsAttacker: op.IsAttacker,
 		}
+		opNames[op.Slug] = meta
+		opNames[normalizeOperatorSlug(op.Slug)] = meta
 	}
 	return
 }
