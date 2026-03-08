@@ -29,3 +29,10 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Local Go build cache used in this workspace
+.gocache/
+.gopath/
+
+# test files
+test-files/

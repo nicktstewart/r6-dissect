@@ -27,15 +27,33 @@ const (
 )
 
 type MatchUpdate struct {
-	Type                   MatchUpdateType `json:"type"`
-	Username               string          `json:"username,omitempty"`
-	Target                 string          `json:"target,omitempty"`
-	Headshot               *bool           `json:"headshot,omitempty"`
-	Time                   string          `json:"time"`
-	TimeInSeconds          float64         `json:"timeInSeconds"`
-	Message                string          `json:"message,omitempty"`
-	Operator               Operator        `json:"operator,omitempty"`
-	usernameFromScoreboard string
+	Type          MatchUpdateType `json:"type"`
+	Username      string          `json:"username,omitempty"`
+	Target        string          `json:"target,omitempty"`
+	Headshot      *bool           `json:"headshot,omitempty"`
+	Time          string          `json:"time"`
+	TimeInSeconds float64         `json:"timeInSeconds"`
+	Message       string          `json:"message,omitempty"`
+	Operator      Operator        `json:"operator,omitempty"`
+}
+
+func (r *Reader) recordKillUpdate(u MatchUpdate) {
+	killerIdx := r.PlayerIndexByUsername(u.Username)
+	targetIdx := r.PlayerIndexByUsername(u.Target)
+	if killerIdx >= 0 && targetIdx >= 0 &&
+		r.Header.Players[killerIdx].TeamIndex == r.Header.Players[targetIdx].TeamIndex {
+		return
+	}
+	for _, val := range r.MatchFeedback {
+		if val.Type != Kill && val.Type != Death {
+			continue
+		}
+		if val.Target == u.Target || (val.Type == Death && val.Username == u.Target) {
+			return
+		}
+	}
+	r.MatchFeedback = append(r.MatchFeedback, u)
+	log.Debug().Interface("match_update", u).Send()
 }
 
 func (i MatchUpdateType) MarshalJSON() (text []byte, err error) {
@@ -146,18 +164,7 @@ func readMatchFeedback(r *Reader) error {
 			*headshotPtr = true
 		}
 		u.Headshot = headshotPtr
-		// Ignore duplicates
-		for _, val := range r.MatchFeedback {
-			if val.Type == Kill && val.Username == u.Username && val.Target == u.Target {
-				return nil
-			}
-		}
-		// removing the elimination username for now
-		if r.lastKillerFromScoreboard != username {
-			u.usernameFromScoreboard = r.lastKillerFromScoreboard
-		}
-		r.MatchFeedback = append(r.MatchFeedback, u)
-		log.Debug().Interface("match_update", u).Send()
+		r.recordKillUpdate(u)
 		return nil
 	}
 	// TODO: Y9S1 may have removed or modified other match feedback options

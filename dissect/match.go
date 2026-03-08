@@ -81,7 +81,24 @@ func (m *MatchReader) Read() error {
 			return err
 		}
 	}
+	if len(m.rounds) > 0 && shouldIgnoreFinalRoundForfeit(m.rounds[len(m.rounds)-1]) {
+		m.rounds = m.rounds[:len(m.rounds)-1]
+		m.paths = m.paths[:len(m.paths)-1]
+	}
 	return nil
+}
+
+func shouldIgnoreFinalRoundForfeit(r *Reader) bool {
+	if r == nil {
+		return false
+	}
+	for _, update := range r.MatchFeedback {
+		switch update.Type {
+		case Kill, Death, DefuserPlantComplete, DefuserDisableComplete, PlayerLeave:
+			return false
+		}
+	}
+	return true
 }
 
 func (m *MatchReader) FirstRound() (r *Reader, err error) {
