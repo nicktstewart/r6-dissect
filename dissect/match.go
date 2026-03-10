@@ -94,7 +94,7 @@ func shouldIgnoreFinalRoundForfeit(r *Reader) bool {
 	}
 	for _, update := range r.MatchFeedback {
 		switch update.Type {
-		case Kill, Death, DefuserPlantComplete, DefuserDisableComplete, PlayerLeave:
+		case Kill, Death, DefuserPlantComplete, DefuserDisableComplete:
 			return false
 		}
 	}
