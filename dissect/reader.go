@@ -18,21 +18,28 @@ import (
 var strSep = []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
 type Reader struct {
-	b                      []byte
-	offset                 int
-	queries                [][]byte
-	listeners              [][]func(r *Reader) error
-	time                   float64 // in seconds
-	timeRaw                string  // raw dissect format
-	lastDefuserPlayerIndex int
-	lastDefuserTimer       float64
-	defuserDisabling       bool
-	planted                bool
-	readPartial            bool // reads up to the player info packets
-	playersRead            int
-	Header                 Header        `json:"header"`
-	MatchFeedback          []MatchUpdate `json:"matchFeedback"`
-	Scoreboard             Scoreboard
+	b                              []byte
+	offset                         int
+	queries                        [][]byte
+	listeners                      [][]func(r *Reader) error
+	playerEntityRefOwners          map[uint64]int
+	playerEntityRefConflicts       map[uint64]struct{}
+	playerTimerAliasRefOwners      map[uint64]int
+	playerTimerAliasRefConflicts   map[uint64]struct{}
+	time                           float64 // in seconds
+	timeRaw                        string  // raw dissect format
+	lastPlantingPlayerIndex        int
+	lastDisablingPlayerIndex       int
+	lastReplayPlantingPlayerIndex  int
+	lastReplayDisablingPlayerIndex int
+	lastDefuserTimer               float64
+	defuserDisabling               bool
+	planted                        bool
+	readPartial                    bool // reads up to the player info packets
+	playersRead                    int
+	Header                         Header        `json:"header"`
+	MatchFeedback                  []MatchUpdate `json:"matchFeedback"`
+	Scoreboard                     Scoreboard
 }
 
 // NewReader decompresses in using zstd and
@@ -45,7 +52,16 @@ func NewReader(in io.Reader) (r *Reader, err error) {
 	}
 	log.Debug().Bool("chunkedCompression (>=Y8S4)", chunkedCompression).Send()
 	r = &Reader{
-		readPartial: false,
+		readPartial:                    false,
+		playerEntityRefOwners:          make(map[uint64]int),
+		playerEntityRefConflicts:       make(map[uint64]struct{}),
+		playerTimerAliasRefOwners:      make(map[uint64]int),
+		playerTimerAliasRefConflicts:   make(map[uint64]struct{}),
+		lastPlantingPlayerIndex:        -1,
+		lastDisablingPlayerIndex:       -1,
+		lastReplayPlantingPlayerIndex:  -1,
+		lastReplayDisablingPlayerIndex: -1,
+		lastDefuserTimer:               -1,
 	}
 	if chunkedCompression {
 		if err = r.readChunkedData(br); err != nil {

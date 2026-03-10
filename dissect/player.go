@@ -25,6 +25,8 @@ func readPlayer(r *Reader) error {
 	if err != nil {
 		return err
 	}
+	usernameStart := r.offset - len(username)
+	usernameEnd := r.offset
 	if r.Header.CodeVersion >= Y7S4 {
 		if err := r.Seek([]byte{0x40, 0xF2, 0x15, 0x04}); err != nil {
 			return err
@@ -166,6 +168,9 @@ func readPlayer(r *Reader) error {
 	}
 	if !found && len(username) > 0 {
 		r.Header.Players = append(r.Header.Players, p)
+	}
+	if len(username) > 0 {
+		r.registerPlayerEntityRefs(r.PlayerIndexByUsername(username), usernameStart, usernameEnd)
 	}
 	return err
 }
