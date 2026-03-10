@@ -9,6 +9,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+func latestMatchUpdate(feedback []MatchUpdate, updateType MatchUpdateType) (MatchUpdate, bool) {
+	for i := len(feedback) - 1; i >= 0; i-- {
+		if feedback[i].Type == updateType {
+			return feedback[i], true
+		}
+	}
+	return MatchUpdate{}, false
+}
+
 func readTime(r *Reader) error {
 	time, err := r.Uint32()
 	if err != nil {
@@ -133,6 +142,7 @@ func (r *Reader) roundEnd() {
 	log.Debug().Msg("round_end")
 
 	r.reconcileKillsWithScoreboard()
+	r.reconcileDefuserActors()
 
 	planter := -1
 	scoreWinner := -1
@@ -156,21 +166,67 @@ func (r *Reader) roundEnd() {
 		}
 	}
 
+	if _, hasDisableComplete := latestMatchUpdate(r.MatchFeedback, DefuserDisableComplete); !hasDisableComplete && scoreWinner >= 0 {
+		if plant, hasPlant := latestMatchUpdate(r.MatchFeedback, DefuserPlantComplete); hasPlant && plant.Username != "" && r.Header.Teams[scoreWinner].Role == Defense {
+			if replayUsername := r.usernameForPlayerIndex(r.lastReplayDisablingPlayerIndex); replayUsername != "" {
+				r.MatchFeedback = append(r.MatchFeedback, MatchUpdate{
+					Type:          DefuserDisableComplete,
+					Username:      replayUsername,
+					Time:          r.timeRaw,
+					TimeInSeconds: r.time,
+				})
+			} else if disableStart, hasDisableStart := latestMatchUpdate(r.MatchFeedback, DefuserDisableStart); hasDisableStart && disableStart.Username != "" {
+				r.MatchFeedback = append(r.MatchFeedback, MatchUpdate{
+					Type:          DefuserDisableComplete,
+					Username:      disableStart.Username,
+					Time:          disableStart.Time,
+					TimeInSeconds: disableStart.TimeInSeconds,
+				})
+			}
+		}
+	}
+	if _, hasDisableComplete := latestMatchUpdate(r.MatchFeedback, DefuserDisableComplete); !hasDisableComplete {
+		if plant, hasPlant := latestMatchUpdate(r.MatchFeedback, DefuserPlantComplete); hasPlant && plant.Username != "" {
+			if disableStart, hasDisableStart := latestMatchUpdate(r.MatchFeedback, DefuserDisableStart); hasDisableStart && disableStart.Username != "" {
+				r.MatchFeedback = append(r.MatchFeedback, MatchUpdate{
+					Type:          DefuserDisableComplete,
+					Username:      disableStart.Username,
+					Time:          disableStart.Time,
+					TimeInSeconds: disableStart.TimeInSeconds,
+				})
+			}
+		}
+	}
+
 	for _, u := range r.MatchFeedback {
 		switch u.Type {
 		case Kill:
-			i := r.Header.Players[r.PlayerIndexByUsername(u.Target)].TeamIndex
+			targetIndex := r.PlayerIndexByUsername(u.Target)
+			if targetIndex < 0 {
+				break
+			}
+			i := r.Header.Players[targetIndex].TeamIndex
 			deaths[i] = deaths[i] + 1
 			break
 		case Death:
-			i := r.Header.Players[r.PlayerIndexByUsername(u.Username)].TeamIndex
+			playerIndex := r.PlayerIndexByUsername(u.Username)
+			if playerIndex < 0 {
+				break
+			}
+			i := r.Header.Players[playerIndex].TeamIndex
 			deaths[i] = deaths[i] + 1
 			break
 		case DefuserPlantComplete:
-			planter = r.PlayerIndexByUsername(u.Username)
+			if playerIndex := r.PlayerIndexByUsername(u.Username); playerIndex >= 0 {
+				planter = playerIndex
+			}
 			break
 		case DefuserDisableComplete:
-			i := r.Header.Players[r.PlayerIndexByUsername(u.Username)].TeamIndex
+			playerIndex := r.PlayerIndexByUsername(u.Username)
+			if playerIndex < 0 {
+				break
+			}
+			i := r.Header.Players[playerIndex].TeamIndex
 			r.Header.Teams[i].Won = true
 			r.Header.Teams[i^1].Won = false
 			r.Header.Teams[i].WinCondition = DisabledDefuser
