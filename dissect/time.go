@@ -75,14 +75,38 @@ func (r *Reader) reconcileKillsWithScoreboard() {
 
 	missingKills := make(map[string]int)
 	surplusKills := make(map[string]int)
+	maxAbsDiff := 0
 	for _, p := range r.Header.Players {
 		username := p.Username
 		diff := scoreboardKills[username] - parsedKills[username]
+		absDiff := diff
+		if absDiff < 0 {
+			absDiff = -absDiff
+		}
+		if absDiff > maxAbsDiff {
+			maxAbsDiff = absDiff
+		}
 		if diff > 0 {
 			missingKills[username] = diff
 		} else if diff < 0 {
 			surplusKills[username] = -diff
 		}
+		if scoreboardDebugEnabled && r.Header.CodeVersion >= Y11S1 && (scoreboardKills[username] != 0 || parsedKills[username] != 0) {
+			log.Debug().
+				Str("username", username).
+				Int("parsed_kills", parsedKills[username]).
+				Int("scoreboard_kills", scoreboardKills[username]).
+				Int("kill_diff", diff).
+				Msg("scoreboard_reconcile_kill_counts")
+		}
+	}
+	if r.Header.CodeVersion >= Y11S1 && maxAbsDiff > 1 {
+		if scoreboardDebugEnabled {
+			log.Debug().
+				Int("max_abs_diff", maxAbsDiff).
+				Msg("scoreboard_reconcile_skipped_untrusted_y11_kills")
+		}
+		return
 	}
 	if len(missingKills) == 0 || len(surplusKills) == 0 {
 		return

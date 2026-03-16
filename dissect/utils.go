@@ -11,13 +11,20 @@ import (
 )
 
 func (r *Reader) PlayerIndexByID(id []byte) int {
+	if idx := r.playerIndexByID(id); idx != -1 {
+		return idx
+	}
+	if !bytes.Equal(id, []byte{0x00, 0x00, 0x00, 0x00}) {
+		log.Debug().Hex("id", id).Msg("warn: could not index player by id")
+	}
+	return -1
+}
+
+func (r *Reader) playerIndexByID(id []byte) int {
 	for i, p := range r.Header.Players {
 		if bytes.Equal(id, p.DissectID) {
 			return i
 		}
-	}
-	if !bytes.Equal(id, []byte{0x00, 0x00, 0x00, 0x00}) {
-		log.Debug().Hex("id", id).Msg("warn: could not index player by id")
 	}
 	return -1
 }
