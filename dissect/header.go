@@ -55,6 +55,7 @@ type Player struct {
 	Spawn        string   `json:"spawn,omitempty"`
 	DissectID    []byte   `json:"-" deep:"-"` // dissect player id at end of packet (4 bytes)
 	uiID         uint64   `json:"-" deep:"-"`
+	gameVersion  string   `json:"-" deep:"-"`
 }
 
 type stringerIntMarshal struct {
@@ -508,6 +509,9 @@ func (r *Reader) readHeader() (Header, error) {
 	}
 	// Add match id
 	h.MatchID = props["id"]
+	for i := range h.Players {
+		h.Players[i].gameVersion = h.GameVersion
+	}
 	// Parse team scores
 	n, err = strconv.Atoi(props["teamscore0"])
 	if err != nil {
@@ -560,7 +564,10 @@ func (r *Reader) deriveTeamRoles() {
 		if p.Operator == Recruit {
 			continue
 		}
-		role := p.Operator.Role()
+		role, ok := p.Operator.RoleForGameVersion(p.gameVersion)
+		if !ok {
+			continue
+		}
 		teamIndex := p.TeamIndex
 		oppositeTeamIndex := teamIndex ^ 1
 		if role == Attack {

@@ -3,6 +3,7 @@ package dissect
 import (
 	"bytes"
 	"encoding/binary"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -417,31 +418,88 @@ func (r *Reader) inferDisableCompletionPlayerIndex(timeInSeconds float64) int {
 	return bestPlayerIndex
 }
 
+func (r *Reader) deterministicTeamFallbackPlayerIndex(role TeamRole, timeInSeconds float64) int {
+	teamIndex := r.getTeamByRole(role)
+	if teamIndex < 0 {
+		return -1
+	}
+	alive := r.getAlivePlayersByTeamAtTime(teamIndex, timeInSeconds)
+	if len(alive) == 0 {
+		for _, p := range r.Header.Players {
+			if p.TeamIndex == teamIndex && p.Username != "" {
+				alive = append(alive, p.Username)
+			}
+		}
+	}
+	if len(alive) == 0 {
+		return -1
+	}
+
+	bestPlayerIndex := -1
+	bestTime := -1.0
+	for _, update := range r.MatchFeedback {
+		if update.TimeInSeconds < timeInSeconds {
+			continue
+		}
+		playerIndex := r.PlayerIndexByUsername(update.Username)
+		if playerIndex < 0 || playerIndex >= len(r.Header.Players) {
+			continue
+		}
+		if r.Header.Players[playerIndex].TeamIndex != teamIndex {
+			continue
+		}
+		if !slices.Contains(alive, update.Username) {
+			continue
+		}
+		if bestPlayerIndex == -1 || update.TimeInSeconds < bestTime {
+			bestPlayerIndex = playerIndex
+			bestTime = update.TimeInSeconds
+		}
+	}
+	if bestPlayerIndex >= 0 {
+		return bestPlayerIndex
+	}
+
+	slices.Sort(alive)
+	return r.PlayerIndexByUsername(alive[0])
+}
+
+func (r *Reader) completionPlayerIndexWithFallback(updateType MatchUpdateType, currentPlayerIndex int, timeInSeconds float64) int {
+	role := Attack
+	startType := DefuserPlantStart
+	if updateType == DefuserDisableComplete {
+		role = Defense
+		startType = DefuserDisableStart
+	}
+	if r.playerIndexHasRole(currentPlayerIndex, role) {
+		return currentPlayerIndex
+	}
+
+	playerIndex := r.inferPlayerIndexFromObjectiveStart(startType, timeInSeconds, role)
+	if playerIndex < 0 {
+		if role == Attack {
+			playerIndex = r.inferPlantCompletionPlayerIndex(timeInSeconds)
+		} else {
+			playerIndex = r.inferDisableCompletionPlayerIndex(timeInSeconds)
+		}
+	}
+	if playerIndex < 0 {
+		playerIndex = r.deterministicTeamFallbackPlayerIndex(role, timeInSeconds)
+	}
+	return playerIndex
+}
+
 func (r *Reader) reconcileDefuserActors() {
 	for i := range r.MatchFeedback {
 		update := &r.MatchFeedback[i]
 		switch update.Type {
 		case DefuserPlantComplete:
-			playerIndex := r.PlayerIndexByUsername(update.Username)
-			if r.playerIndexHasRole(playerIndex, Attack) {
-				continue
-			}
-			playerIndex = r.inferPlayerIndexFromObjectiveStart(DefuserPlantStart, update.TimeInSeconds, Attack)
-			if playerIndex < 0 {
-				playerIndex = r.inferPlantCompletionPlayerIndex(update.TimeInSeconds)
-			}
+			playerIndex := r.completionPlayerIndexWithFallback(update.Type, r.PlayerIndexByUsername(update.Username), update.TimeInSeconds)
 			if playerIndex >= 0 {
 				update.Username = r.Header.Players[playerIndex].Username
 			}
 		case DefuserDisableComplete:
-			playerIndex := r.PlayerIndexByUsername(update.Username)
-			if r.playerIndexHasRole(playerIndex, Defense) {
-				continue
-			}
-			playerIndex = r.inferPlayerIndexFromObjectiveStart(DefuserDisableStart, update.TimeInSeconds, Defense)
-			if playerIndex < 0 {
-				playerIndex = r.inferDisableCompletionPlayerIndex(update.TimeInSeconds)
-			}
+			playerIndex := r.completionPlayerIndexWithFallback(update.Type, r.PlayerIndexByUsername(update.Username), update.TimeInSeconds)
 			if playerIndex >= 0 {
 				update.Username = r.Header.Players[playerIndex].Username
 			}
@@ -556,6 +614,7 @@ func readDefuserTimer(r *Reader) error {
 		return nil
 	}
 
+	completionPlayerIndex = r.completionPlayerIndexWithFallback(updateType, completionPlayerIndex, r.time)
 	username := r.usernameForPlayerIndex(completionPlayerIndex)
 	u := MatchUpdate{
 		Type:          updateType,

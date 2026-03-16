@@ -33,6 +33,7 @@
 # Local Go build cache used in this workspace
 .gocache/
 .gopath/
+.gocache-codex/
 
 # test files
 test-files/

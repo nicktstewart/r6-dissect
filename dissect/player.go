@@ -130,16 +130,17 @@ func readPlayer(r *Reader) error {
 		log.Debug().Str("warn", "profileID not found, skipping").Send()
 	}
 	p := Player{
-		ID:        unknownId,
-		ProfileID: profileID,
-		Username:  username,
-		TeamIndex: teamIndex,
-		Operator:  Operator(op),
-		Spawn:     spawn,
-		DissectID: id,
-		uiID:      uiID,
+		ID:          unknownId,
+		ProfileID:   profileID,
+		Username:    username,
+		TeamIndex:   teamIndex,
+		Operator:    Operator(op),
+		Spawn:       spawn,
+		DissectID:   id,
+		uiID:        uiID,
+		gameVersion: r.Header.GameVersion,
 	}
-	if p.Operator != Recruit && p.Operator.Role() == Defense {
+	if role, ok := p.Operator.RoleForGameVersion(p.gameVersion); p.Operator != Recruit && ok && role == Defense {
 		p.Spawn = r.Header.Site // We cannot detect the spawn here on defense
 	}
 	log.Debug().Str("username", username).
@@ -162,6 +163,7 @@ func readPlayer(r *Reader) error {
 			r.Header.Players[i].Spawn = p.Spawn
 			r.Header.Players[i].DissectID = p.DissectID
 			r.Header.Players[i].uiID = p.uiID
+			r.Header.Players[i].gameVersion = p.gameVersion
 			found = true
 			break
 		}
