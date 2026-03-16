@@ -40,6 +40,7 @@ type Reader struct {
 	Header                         Header        `json:"header"`
 	MatchFeedback                  []MatchUpdate `json:"matchFeedback"`
 	Scoreboard                     Scoreboard
+	scoreboardPlayerCorpusLogged   bool
 }
 
 // NewReader decompresses in using zstd and
