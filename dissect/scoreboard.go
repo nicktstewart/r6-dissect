@@ -50,6 +50,20 @@ const (
 
 var scoreboardDebugEnabled = os.Getenv("R6_SCOREBOARD_DEBUG") == "1"
 
+func (r *Reader) scoreboardValidPlayerIndex(idx int) int {
+	if idx < 0 || idx >= len(r.Header.Players) || idx >= len(r.Scoreboard.Players) {
+		return -1
+	}
+	return idx
+}
+
+func (r *Reader) scoreboardValidHeaderPlayerIndex(idx int) int {
+	if idx < 0 || idx >= len(r.Header.Players) {
+		return -1
+	}
+	return idx
+}
+
 func (r *Reader) scoreboardPlayerIndexFromEntityRefs(start int, end int) int {
 	type candidate struct {
 		count       int
@@ -65,7 +79,7 @@ func (r *Reader) scoreboardPlayerIndexFromEntityRefs(start int, end int) int {
 		if !found {
 			playerIndex, found = r.playerTimerAliasRefOwners[ref]
 		}
-		if !found {
+		if !found || r.scoreboardValidPlayerIndex(playerIndex) == -1 {
 			continue
 		}
 		entry := candidates[playerIndex]
@@ -244,11 +258,15 @@ func (r *Reader) logScoreboardPacketFamily(family string, packetOffset int, valu
 			continue
 		}
 		if playerIndex, found := r.playerEntityRefOwners[ref]; found {
-			refHits = append(refHits, fmt.Sprintf("entity:%s@%d:%s", refString(ref), i, r.Header.Players[playerIndex].Username))
+			if playerIndex = r.scoreboardValidHeaderPlayerIndex(playerIndex); playerIndex != -1 {
+				refHits = append(refHits, fmt.Sprintf("entity:%s@%d:%s", refString(ref), i, r.Header.Players[playerIndex].Username))
+			}
 			continue
 		}
 		if playerIndex, found := r.playerTimerAliasRefOwners[ref]; found {
-			refHits = append(refHits, fmt.Sprintf("alias:%s@%d:%s", refString(ref), i, r.Header.Players[playerIndex].Username))
+			if playerIndex = r.scoreboardValidHeaderPlayerIndex(playerIndex); playerIndex != -1 {
+				refHits = append(refHits, fmt.Sprintf("alias:%s@%d:%s", refString(ref), i, r.Header.Players[playerIndex].Username))
+			}
 		}
 	}
 	if len(refHits) > 0 {
@@ -499,11 +517,11 @@ func (r *Reader) scoreboardPlayerIndexFromWindow(start int, end int) int {
 		return idx
 	}
 	if idx := r.scoreboardPlayerIndexFromUsernameWindow(start, end); idx != -1 {
-		return idx
+		return r.scoreboardValidPlayerIndex(idx)
 	}
 	for pos := start; pos+4 <= end; pos++ {
 		if idx := r.playerIndexByID(r.b[pos : pos+4]); idx != -1 {
-			return idx
+			return r.scoreboardValidPlayerIndex(idx)
 		}
 	}
 	return -1
@@ -515,10 +533,10 @@ func (r *Reader) scoreboardPlayerIndexFromRowCell(packetOffset int) int {
 		return -1
 	}
 	if playerIndex, found := r.playerEntityRefOwners[cell.ref]; found {
-		return playerIndex
+		return r.scoreboardValidPlayerIndex(playerIndex)
 	}
 	if playerIndex, found := r.playerTimerAliasRefOwners[cell.ref]; found {
-		return playerIndex
+		return r.scoreboardValidPlayerIndex(playerIndex)
 	}
 	return -1
 }
@@ -641,9 +659,13 @@ func (r *Reader) scoreboardNearbyCells(packetOffset int) string {
 		value := binary.LittleEndian.Uint32(r.b[pos+5 : pos+9])
 		label := refString(ref)
 		if owner, found := r.playerEntityRefOwners[ref]; found {
-			label = fmt.Sprintf("%s:%s", label, r.Header.Players[owner].Username)
+			if owner = r.scoreboardValidHeaderPlayerIndex(owner); owner != -1 {
+				label = fmt.Sprintf("%s:%s", label, r.Header.Players[owner].Username)
+			}
 		} else if owner, found := r.playerTimerAliasRefOwners[ref]; found {
-			label = fmt.Sprintf("%s:alias:%s", label, r.Header.Players[owner].Username)
+			if owner = r.scoreboardValidHeaderPlayerIndex(owner); owner != -1 {
+				label = fmt.Sprintf("%s:alias:%s", label, r.Header.Players[owner].Username)
+			}
 		}
 		cells = append(cells, fmt.Sprintf("%d=%s:%d", pos, label, value))
 	}
@@ -658,6 +680,7 @@ func readScoreboardKills(r *Reader) error {
 	}
 	r.logScoreboardPlayerCorpus()
 	idx, id := r.scoreboardPlayerIndexForY11KillAssist(packetOffset, 30)
+	idx = r.scoreboardValidPlayerIndex(idx)
 	if idx != -1 {
 		username := r.Header.Players[idx].Username
 		r.Scoreboard.Players[idx].Kills = kills
@@ -686,6 +709,7 @@ func readScoreboardAssists(r *Reader) error {
 		return nil
 	}
 	idx, id := r.scoreboardPlayerIndexForY11KillAssist(packetOffset, 30)
+	idx = r.scoreboardValidPlayerIndex(idx)
 	username := "N/A"
 	if idx != -1 {
 		username = r.Header.Players[idx].Username
@@ -716,6 +740,7 @@ func readScoreboardScore(r *Reader) error {
 		return nil
 	}
 	idx, id := r.scoreboardPlayerIndexForY11Score(packetOffset)
+	idx = r.scoreboardValidPlayerIndex(idx)
 	username := "N/A"
 	if idx != -1 {
 		username = r.Header.Players[idx].Username
