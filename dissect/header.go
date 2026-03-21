@@ -116,6 +116,8 @@ const (
 	Lair               Map = 388073319671
 	FortressY10        Map = 398899676157
 	Stadium2020        Map = 405306299908
+	VillaY10           Map = 409325881472
+	CoastlineY10       Map = 436375283234
 	BankY10            Map = 413779563590
 	BorderY10          Map = 407987100456
 	ChaletY10          Map = 407558616688
