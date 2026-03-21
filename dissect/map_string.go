@@ -88,7 +88,7 @@ var _Map_map = map[Map]string{
 	417890697769: _Map_name[298:305],
 	418119057546: _Map_name[305:322],
 	418126004176: _Map_name[322:334],
-	436375283234: _Map_name[342:355],
+	436375283234: _Map_name[342:354],
 }
 
 func (i Map) String() string {
