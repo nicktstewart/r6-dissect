@@ -126,6 +126,7 @@ const (
 	LairY10            Map = 417890697769
 	NighthavenLabsY10  Map = 418119057546
 	ConsulateY10       Map = 418126004176
+	CalypsoCasino      Map = 419965653950
 
 	KilledOpponents  WinCondition = "KilledOpponents"
 	SecuredArea      WinCondition = "SecuredArea" // TODO
