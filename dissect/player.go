@@ -11,6 +11,8 @@ func readPlayer(r *Reader) error {
 	idIndicator := []byte{0x33, 0xD8, 0x3D, 0x4F, 0x23}
 	if r.Header.CodeVersion <= Y7S2 {
 		idIndicator = []byte{0xE6, 0xF9, 0x7D, 0x86}
+	} else if r.Header.CodeVersion >= Y11S2_1 {
+		idIndicator = []byte{0x8C, 0x61, 0x1A, 0x75, 0x23}
 	}
 	spawnIndicator := []byte{0xAF, 0x98, 0x99, 0xCA}
 	profileIDIndicator := []byte{0x8A, 0x50, 0x9B, 0xD0}
@@ -98,13 +100,19 @@ func readPlayer(r *Reader) error {
 	// there seems to be more to this, but its a quick fix for atk op swaps for now
 	var uiID uint64
 	if r.Header.CodeVersion >= Y9S3 {
-		if err = r.Seek([]byte{0x38, 0xDF, 0xEE, 0x88}); err != nil {
-			return err
-		}
-		if err = r.Skip(13); err != nil {
-			return err
-		}
-		if uiID, err = r.Uint64(); err != nil {
+		savedOffset := r.offset
+		if err = r.Seek([]byte{0x38, 0xDF, 0xEE, 0x88}); err == nil {
+			if err = r.Skip(13); err != nil {
+				return err
+			}
+			if uiID, err = r.Uint64(); err != nil {
+				return err
+			}
+		} else if Ok(err) {
+			r.offset = savedOffset
+			err = nil
+			log.Debug().Str("warn", "uiID not found, skipping").Send()
+		} else {
 			return err
 		}
 	}
@@ -112,18 +120,24 @@ func readPlayer(r *Reader) error {
 	profileID := ""
 	var unknownId uint64
 	if len(r.Header.RecordingProfileID) > 0 {
-		if err = r.Seek(profileIDIndicator); err != nil {
-			return err
-		}
-		profileID, err = r.String()
-		if err != nil {
-			return err
-		}
-		if err = r.Skip(5); err != nil { // 22eed445c8
-			return err
-		}
-		unknownId, err = r.Uint64()
-		if err != nil {
+		savedOffset := r.offset
+		if err = r.Seek(profileIDIndicator); err == nil {
+			profileID, err = r.String()
+			if err != nil {
+				return err
+			}
+			if err = r.Skip(5); err != nil { // 22eed445c8
+				return err
+			}
+			unknownId, err = r.Uint64()
+			if err != nil {
+				return err
+			}
+		} else if Ok(err) {
+			r.offset = savedOffset
+			err = nil
+			log.Debug().Str("warn", "profileID not found, skipping").Send()
+		} else {
 			return err
 		}
 	} else {

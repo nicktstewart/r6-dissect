@@ -34,6 +34,9 @@
 .gocache/
 .gopath/
 .gocache-codex/
+.codex-go-cache/
+.codex-go-mod/
+.codex-gopath
 
 # test files
 test-files/
