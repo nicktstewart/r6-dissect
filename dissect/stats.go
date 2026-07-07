@@ -87,7 +87,10 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 		winningTeamIndex = 1
 	}
 	for i, p := range r.Header.Players {
-		scorePlayer := r.Scoreboard.Players[i]
+		scorePlayer := ScoreboardPlayer{}
+		if i < len(r.Scoreboard.Players) {
+			scorePlayer = r.Scoreboard.Players[i]
+		}
 		stats = append(stats, PlayerRoundStats{
 			Username:  p.Username,
 			TeamIndex: p.TeamIndex,
@@ -99,15 +102,20 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 	}
 	lastDeath := -1
 	for _, a := range r.MatchFeedback {
-		i := index[a.Username]
+		i, ok := index[a.Username]
+		if !ok {
+			continue
+		}
 		if a.Type == Kill {
 			stats[i].Kills += 1
-			if *a.Headshot {
+			if a.Headshot != nil && *a.Headshot {
 				stats[i].Headshots += 1
 			}
 			stats[i].HeadshotPercentage = headshotPercentage(stats[i].Headshots, stats[i].Kills)
-			stats[index[a.Target]].Died = true
-			lastDeath = index[a.Target]
+			if targetIndex, ok := index[a.Target]; ok {
+				stats[targetIndex].Died = true
+				lastDeath = targetIndex
+			}
 		} else if a.Type == Death {
 			stats[i].Died = true
 			lastDeath = i
@@ -139,12 +147,14 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 		teamLeft := r.NumPlayers(winningTeamIndex)
 		oneVx := 0
 		for _, a := range r.MatchFeedback {
-			if a.Type == Kill && stats[index[a.Target]].TeamIndex == winningTeamIndex {
-				teamLeft--
-			} else if a.Type == Death && stats[index[a.Username]].TeamIndex == winningTeamIndex {
-				teamLeft--
-			} else if a.Type == PlayerLeave && stats[index[a.Username]].TeamIndex == winningTeamIndex {
-				teamLeft--
+			if a.Type == Kill {
+				if targetIndex, ok := index[a.Target]; ok && stats[targetIndex].TeamIndex == winningTeamIndex {
+					teamLeft--
+				}
+			} else if a.Type == Death || a.Type == PlayerLeave {
+				if playerIndex, ok := index[a.Username]; ok && stats[playerIndex].TeamIndex == winningTeamIndex {
+					teamLeft--
+				}
 			}
 			if a.Username != username {
 				continue
@@ -166,16 +176,17 @@ func (r *Reader) PlayerStats() []PlayerRoundStats {
 func (m *MatchReader) PlayerStats() []PlayerMatchStats {
 	stats := make([]PlayerMatchStats, 0)
 	index := make(map[string]int)
-	for i, r := range m.rounds {
+	for _, r := range m.rounds {
 		for _, p := range r.PlayerStats() {
-			if len(stats) == 0 || stats[index[p.Username]].Username != p.Username {
+			i, found := index[p.Username]
+			if !found {
 				stats = append(stats, PlayerMatchStats{
 					Username:  p.Username,
 					TeamIndex: p.TeamIndex,
 				})
-				index[p.Username] = len(index)
+				i = len(stats) - 1
+				index[p.Username] = i
 			}
-			i = index[p.Username]
 			stats[i].Rounds += 1
 			stats[i].Kills += p.Kills
 			if p.Died {

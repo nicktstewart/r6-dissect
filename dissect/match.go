@@ -63,8 +63,11 @@ func (m *MatchReader) read(i int) error {
 	}
 	defer f.Close()
 	r, err := NewReader(f)
-	if err != nil {
+	if err != nil && !Ok(err) {
 		return err
+	}
+	if r == nil {
+		return ErrInvalidFile
 	}
 	m.rounds[i] = r
 	for i = 0; i < len(m.queries); i++ {
@@ -78,10 +81,12 @@ func (m *MatchReader) read(i int) error {
 func (m *MatchReader) Read() error {
 	for i := range m.paths {
 		if err := m.read(i); err != nil {
-			return err
+			if !Ok(err) {
+				return err
+			}
 		}
 	}
-	if len(m.rounds) > 0 && shouldIgnoreFinalRoundForfeit(m.rounds[len(m.rounds)-1]) {
+	if len(m.rounds) > 1 && shouldIgnoreFinalRoundForfeit(m.rounds[len(m.rounds)-1]) {
 		m.rounds = m.rounds[:len(m.rounds)-1]
 		m.paths = m.paths[:len(m.paths)-1]
 	}

@@ -429,6 +429,9 @@ func (r *Reader) readHeader() (Header, error) {
 		}
 		_, lastProp = props["teamscore1"]
 	}
+	if playerData {
+		players = append(players, currentPlayer)
+	}
 	h := Header{
 		Teams:      [2]Team{},
 		Players:    players,

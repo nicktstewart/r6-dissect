@@ -37,6 +37,8 @@
 .codex-go-cache/
 .codex-go-mod/
 .codex-gopath
+.codex-verify/
+.codex-go-cache-test/
 
 # test files
 test-files/
