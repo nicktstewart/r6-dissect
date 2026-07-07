@@ -26,6 +26,7 @@ type Reader struct {
 	playerEntityRefConflicts       map[uint64]struct{}
 	playerTimerAliasRefOwners      map[uint64]int
 	playerTimerAliasRefConflicts   map[uint64]struct{}
+	y11s2EntityRefOwners           map[uint64]int
 	time                           float64 // in seconds
 	timeRaw                        string  // raw dissect format
 	lastPlantingPlayerIndex        int
@@ -84,6 +85,9 @@ func NewReader(in io.Reader) (r *Reader, err error) {
 		r.Listen([]byte{0x1E, 0xF1, 0x11, 0xAB}, readY7Time)
 	}
 	r.Listen([]byte{0x59, 0x34, 0xE5, 0x8B, 0x04}, readMatchFeedback)
+	if r.Header.CodeVersion >= Y11S2 {
+		r.Listen(killIndicator, readY11S2KillIndicatorFeedback)
+	}
 	r.Listen([]byte{0x22, 0xA9, 0xC8, 0x58, 0xD9}, readDefuserTimer)
 	r.Listen([]byte{0xEC, 0xDA, 0x4F, 0x80}, readScoreboardScore)
 	r.Listen([]byte{0x4D, 0x73, 0x7F, 0x9E}, readScoreboardAssists)
@@ -239,6 +243,10 @@ func (r *Reader) Read() (err error) {
 		for _, listener := range r.listeners[entry.listenerIndex] {
 			r.offset = entry.offset + 1
 			if err = listener(r); err != nil {
+				if Ok(err) {
+					err = nil
+					continue
+				}
 				return
 			}
 		}

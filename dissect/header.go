@@ -556,7 +556,7 @@ func (r *Reader) deriveTeamRoles() {
 	players := r.Header.Players[:0]
 	for _, p := range r.Header.Players {
 		log.Debug().Interface("player", p).Send()
-		if p.Operator != 0 {
+		if p.Operator != 0 || r.Header.CodeVersion >= Y11S2 {
 			players = append(players, p)
 			r.Scoreboard.Players = append(r.Scoreboard.Players, ScoreboardPlayer{
 				ID: p.DissectID,

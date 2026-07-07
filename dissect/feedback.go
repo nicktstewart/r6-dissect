@@ -76,6 +76,9 @@ var activity2 = []byte{0x00, 0x00, 0x00, 0x22, 0xe3, 0x09, 0x00, 0x79}
 var killIndicator = []byte{0x22, 0xd9, 0x13, 0x3c, 0xba}
 
 func readMatchFeedback(r *Reader) error {
+	if r.Header.CodeVersion >= Y11S2 {
+		return readY11S2MatchFeedback(r)
+	}
 	if r.Header.CodeVersion >= Y9S1Update3 {
 		if err := r.Skip(38); err != nil {
 			return err
@@ -203,4 +206,151 @@ func readMatchFeedback(r *Reader) error {
 	r.MatchFeedback = append(r.MatchFeedback, u)
 	log.Debug().Interface("match_update", u).Send()
 	return nil
+}
+
+func readY11S2MatchFeedback(r *Reader) error {
+	packetStart := r.offset - len([]byte{0x59, 0x34, 0xE5, 0x8B, 0x04})
+	if packetStart < 0 {
+		packetStart = 0
+	}
+	packetEnd := packetStart + 256
+	if packetEnd > len(r.b) {
+		packetEnd = len(r.b)
+	}
+	nextPacket := bytes.Index(r.b[r.offset:packetEnd], []byte{0x59, 0x34, 0xE5, 0x8B, 0x04})
+	if nextPacket >= 0 {
+		packetEnd = r.offset + nextPacket
+	}
+
+	indicatorOffset := bytes.Index(r.b[r.offset:packetEnd], killIndicator)
+	if indicatorOffset < 0 {
+		return nil
+	}
+	payloadStart := r.offset + indicatorOffset + len(killIndicator)
+	payloadEnd := payloadStart + 160
+	if payloadEnd > packetEnd {
+		payloadEnd = packetEnd
+	}
+
+	names := r.y11s2FeedbackNames(payloadStart, payloadEnd)
+	if len(names) == 1 {
+		r.recordY11S2Death(names[0])
+		return nil
+	}
+	if len(names) < 2 {
+		return nil
+	}
+	r.recordY11S2Kill(names[0], names[1])
+	return nil
+}
+
+func readY11S2KillIndicatorFeedback(r *Reader) error {
+	payloadStart := r.offset
+	payloadEnd := payloadStart + 160
+	if payloadEnd > len(r.b) {
+		payloadEnd = len(r.b)
+	}
+
+	names := r.y11s2FeedbackNames(payloadStart, payloadEnd)
+	if len(names) == 1 {
+		r.recordY11S2Death(names[0])
+		return nil
+	}
+	if len(names) < 2 {
+		return nil
+	}
+	r.recordY11S2Kill(names[0], names[1])
+	return nil
+}
+
+func (r *Reader) recordY11S2Death(username string) {
+	u := MatchUpdate{
+		Type:          Death,
+		Username:      username,
+		Time:          r.timeRaw,
+		TimeInSeconds: r.time,
+	}
+	r.recordDeathUpdate(u)
+}
+
+func (r *Reader) recordY11S2Kill(username string, target string) {
+	headshot := false
+	u := MatchUpdate{
+		Type:          Kill,
+		Username:      username,
+		Target:        target,
+		Headshot:      &headshot,
+		Time:          r.timeRaw,
+		TimeInSeconds: r.time,
+	}
+	r.recordKillUpdate(u)
+}
+
+func (r *Reader) recordDeathUpdate(u MatchUpdate) {
+	for _, val := range r.MatchFeedback {
+		switch val.Type {
+		case Kill:
+			if val.Target == u.Username {
+				return
+			}
+		case Death:
+			if val.Username == u.Username {
+				return
+			}
+		}
+	}
+	r.MatchFeedback = append(r.MatchFeedback, u)
+	log.Debug().Interface("match_update", u).Send()
+}
+
+func (r *Reader) y11s2FeedbackNames(start int, end int) []string {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(r.b) {
+		end = len(r.b)
+	}
+	type nameHit struct {
+		offset int
+		name   string
+	}
+	hits := make([]nameHit, 0, 2)
+	seen := make(map[string]struct{})
+	for _, player := range r.Header.Players {
+		name := player.Username
+		if name == "" || len(name) > 255 {
+			continue
+		}
+		raw := []byte(name)
+		searchStart := start
+		for searchStart+len(raw) <= end {
+			relative := bytes.Index(r.b[searchStart:end], raw)
+			if relative < 0 {
+				break
+			}
+			offset := searchStart + relative
+			searchStart = offset + 1
+			if offset == 0 || int(r.b[offset-1]) != len(raw) {
+				continue
+			}
+			if _, found := seen[name]; found {
+				continue
+			}
+			seen[name] = struct{}{}
+			hits = append(hits, nameHit{offset: offset, name: name})
+			break
+		}
+	}
+	if len(hits) == 0 {
+		return nil
+	}
+	for i := 1; i < len(hits); i++ {
+		for j := i; j > 0 && hits[j].offset < hits[j-1].offset; j-- {
+			hits[j], hits[j-1] = hits[j-1], hits[j]
+		}
+	}
+	if len(hits) == 1 {
+		return []string{hits[0].name}
+	}
+	return []string{hits[0].name, hits[1].name}
 }

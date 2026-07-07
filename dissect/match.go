@@ -245,7 +245,7 @@ func (m *MatchReader) WriteExcel(out io.Writer) error {
 			}
 			c.Right(1).Str(a.Time)
 			headshot := false
-			if a.Type == Kill && *a.Headshot {
+			if a.Type == Kill && a.Headshot != nil && *a.Headshot {
 				headshot = true
 			}
 			c.Right(1).Bool(headshot)

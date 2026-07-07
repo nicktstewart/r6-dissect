@@ -279,6 +279,9 @@ func (r *Reader) playerIndexFromOwnedEntityRefWindow(role TeamRole, start int, e
 }
 
 func (r *Reader) resolvePlayerIndexFromTimerWindow(role TeamRole, timeInSeconds float64, packetStart int, packetEnd int) int {
+	if r.Header.CodeVersion >= Y11S2 {
+		return r.playerIndexFromY11S2DefuserTimerActorRef(packetStart)
+	}
 	if role == Defense && len(r.Header.Players) <= 2 {
 		if playerIndex := r.playerIndexFromOwnedEntityRefWindow(role, packetStart-32, packetEnd, r.playerTimerAliasRefOwners); playerIndex >= 0 {
 			return playerIndex
@@ -303,6 +306,96 @@ func (r *Reader) resolvePlayerIndexFromTimerWindow(role TeamRole, timeInSeconds 
 		return -1
 	}
 	return r.playerIndexFromEntityRefWindow(role, packetStart-32, packetEnd+256)
+}
+
+func (r *Reader) playerIndexFromY11S2DefuserTimerActorRef(packetStart int) int {
+	for _, relativeOffset := range []int{36, 11} {
+		ref, ok := entityRefValueAt(r.b, packetStart+relativeOffset)
+		if !ok {
+			continue
+		}
+		if playerIndex, found := r.y11s2EntityRefOwnerIndex(ref); found {
+			return playerIndex
+		}
+		if playerIndex, found := r.playerEntityRefOwners[ref]; found {
+			return playerIndex
+		}
+	}
+	return -1
+}
+
+func (r *Reader) y11s2EntityRefOwnerIndex(ref uint64) (int, bool) {
+	if r.y11s2EntityRefOwners == nil {
+		r.y11s2EntityRefOwners = r.buildY11S2EntityRefOwners()
+	}
+	playerIndex, found := r.y11s2EntityRefOwners[ref]
+	return playerIndex, found
+}
+
+func (r *Reader) buildY11S2EntityRefOwners() map[uint64]int {
+	type refCount map[int]int
+	counts := make(map[uint64]refCount)
+	for playerIndex, player := range r.Header.Players {
+		name := player.Username
+		if name == "" || len(name) > 255 {
+			continue
+		}
+		raw := []byte(name)
+		searchStart := 0
+		for searchStart+len(raw) <= len(r.b) {
+			relative := bytes.Index(r.b[searchStart:], raw)
+			if relative < 0 {
+				break
+			}
+			nameStart := searchStart + relative
+			nameEnd := nameStart + len(raw)
+			searchStart = nameStart + 1
+			if nameStart == 0 || int(r.b[nameStart-1]) != len(raw) {
+				continue
+			}
+			start := nameStart - 512
+			if start < 0 {
+				start = 0
+			}
+			end := nameEnd + 2048
+			if end > len(r.b) {
+				end = len(r.b)
+			}
+			for i := start; i+9 <= end; i++ {
+				ref, ok := entityRefValueAt(r.b, i)
+				if !ok {
+					continue
+				}
+				if counts[ref] == nil {
+					counts[ref] = make(refCount)
+				}
+				counts[ref][playerIndex]++
+			}
+		}
+	}
+
+	owners := make(map[uint64]int)
+	for ref, playerCounts := range counts {
+		bestPlayerIndex := -1
+		bestCount := 0
+		secondBestCount := 0
+		for playerIndex, count := range playerCounts {
+			if count > bestCount {
+				secondBestCount = bestCount
+				bestCount = count
+				bestPlayerIndex = playerIndex
+			} else if count > secondBestCount {
+				secondBestCount = count
+			}
+		}
+		if bestPlayerIndex < 0 {
+			continue
+		}
+		if len(playerCounts) == 1 || (bestCount >= 2 && bestCount > secondBestCount*2) {
+			owners[ref] = bestPlayerIndex
+		}
+	}
+	return owners
 }
 
 func (r *Reader) usernameForPlayerIndex(playerIndex int) string {
@@ -465,6 +558,9 @@ func (r *Reader) deterministicTeamFallbackPlayerIndex(role TeamRole, timeInSecon
 }
 
 func (r *Reader) completionPlayerIndexWithFallback(updateType MatchUpdateType, currentPlayerIndex int, timeInSeconds float64) int {
+	if r.Header.CodeVersion >= Y11S2 && currentPlayerIndex >= 0 {
+		return currentPlayerIndex
+	}
 	role := Attack
 	startType := DefuserPlantStart
 	if updateType == DefuserDisableComplete {
@@ -524,19 +620,46 @@ func readDefuserTimer(r *Reader) error {
 	if timerValue < 0 {
 		return nil
 	}
+	newPlantAttempt := !r.planted && prevTimer >= 0 && timerValue > prevTimer+2
+	if newPlantAttempt {
+		r.lastPlantingPlayerIndex = -1
+		r.lastReplayPlantingPlayerIndex = -1
+	}
 	actionRole := Attack
 	if r.planted {
 		actionRole = Defense
 	}
-	playerIndex, err := r.playerIndexForRoleFromPacket(actionRole, r.time)
-	if err != nil {
-		return err
+	playerIndex := -1
+	if r.Header.CodeVersion < Y11S2 {
+		packetPlayerIndex, err := r.playerIndexForRoleFromPacket(actionRole, r.time)
+		if err != nil {
+			return err
+		}
+		playerIndex = packetPlayerIndex
 	}
 	if replayPlayerIndex := r.resolvePlayerIndexFromTimerWindow(actionRole, r.time, packetStart, r.offset); replayPlayerIndex >= 0 {
 		if actionRole == Attack {
-			r.lastReplayPlantingPlayerIndex = replayPlayerIndex
+			if r.Header.CodeVersion >= Y11S2 &&
+				r.lastPlantingPlayerIndex >= 0 &&
+				r.lastPlantingPlayerIndex != replayPlayerIndex &&
+				!r.playerIndexAliveAtTime(r.lastPlantingPlayerIndex, r.time) {
+				r.lastPlantingPlayerIndex = -1
+				r.lastReplayPlantingPlayerIndex = -1
+			}
+			if r.lastPlantingPlayerIndex < 0 || r.lastPlantingPlayerIndex == replayPlayerIndex {
+				r.lastReplayPlantingPlayerIndex = replayPlayerIndex
+			}
 		} else {
-			r.lastReplayDisablingPlayerIndex = replayPlayerIndex
+			if r.Header.CodeVersion >= Y11S2 &&
+				r.lastDisablingPlayerIndex >= 0 &&
+				r.lastDisablingPlayerIndex != replayPlayerIndex &&
+				!r.playerIndexAliveAtTime(r.lastDisablingPlayerIndex, r.time) {
+				r.lastDisablingPlayerIndex = -1
+				r.lastReplayDisablingPlayerIndex = -1
+			}
+			if r.lastDisablingPlayerIndex < 0 || r.lastDisablingPlayerIndex == replayPlayerIndex {
+				r.lastReplayDisablingPlayerIndex = replayPlayerIndex
+			}
 		}
 		playerIndex = replayPlayerIndex
 	}
@@ -559,7 +682,7 @@ func readDefuserTimer(r *Reader) error {
 		if updateType == DefuserDisableStart {
 			lastPlayerIndex = r.lastDisablingPlayerIndex
 		}
-		if lastPlayerIndex != playerIndex {
+		if lastPlayerIndex == -1 {
 			u := MatchUpdate{
 				Type:          updateType,
 				Username:      r.Header.Players[playerIndex].Username,
@@ -568,13 +691,13 @@ func readDefuserTimer(r *Reader) error {
 			}
 			r.MatchFeedback = append(r.MatchFeedback, u)
 			log.Debug().Interface("match_update", u).Send()
-		}
-		if updateType == DefuserDisableStart {
-			r.lastDisablingPlayerIndex = playerIndex
-		} else {
-			r.lastPlantingPlayerIndex = playerIndex
-			r.lastDisablingPlayerIndex = -1
-			r.lastReplayDisablingPlayerIndex = -1
+			if updateType == DefuserDisableStart {
+				r.lastDisablingPlayerIndex = playerIndex
+			} else {
+				r.lastPlantingPlayerIndex = playerIndex
+				r.lastDisablingPlayerIndex = -1
+				r.lastReplayDisablingPlayerIndex = -1
+			}
 		}
 	}
 
