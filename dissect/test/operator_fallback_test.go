@@ -24,7 +24,7 @@ func TestUnknownOperatorNameForGameVersion(t *testing.T) {
 		gameVersion string
 		wantName    string
 	}{
-		{name: "Y11S2 unknown maps to Dokkaebi", gameVersion: "Y11S2", wantName: "Dokkaebi"},
+		{name: "Y11S2 unknown maps to season fallback", gameVersion: "Y11S2", wantName: "Y11S2UnknownOperator"},
 		{name: "Y11S3 unknown maps to season fallback", gameVersion: "Y11S3", wantName: "Y11S3NewDefender"},
 		{name: "Y11S4 unknown maps to generic fallback", gameVersion: "Y11S4", wantName: "Y11S4UnknownOperator"},
 	}

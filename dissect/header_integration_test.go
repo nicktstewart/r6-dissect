@@ -37,8 +37,52 @@ func TestY11S2HeaderPlayersFromReplayHeader(t *testing.T) {
 				if player.Username == "" {
 					t.Fatalf("Header.Players[%d].Username is empty", i)
 				}
+				if player.RoleName != "" && player.Operator == 0 {
+					t.Fatalf("Header.Players[%d].Operator is zero for roleName %q", i, player.RoleName)
+				}
 			}
 		})
+	}
+}
+
+func TestY11S2HeaderOperatorsFromRoleMarkers(t *testing.T) {
+	replay := filepath.Join("..", "test-files", "Match-2026-07-06_20-13-55-24040", "Match-2026-07-06_20-13-55-24040-R01.rec")
+	f, err := os.Open(replay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+
+	r, err := NewReader(f)
+	if !Ok(err) {
+		t.Fatalf("NewReader() error = %v", err)
+	}
+
+	want := map[string]Operator{
+		"Ch4inon":         Azami,
+		"H031PON":         Valkyrie,
+		"smoking_man_T.K": Smoke,
+		"Kyou.TARO":       Alibi,
+		"AziStyle":        Ela,
+		"Mori.CU":         Ace,
+		"yoshiko.BME":     Twitch,
+		"shiro_the_neko":  Blackbeard,
+		"Otyakururu_":     Flores,
+		"NotS.ujufdn.LV":  Nomad,
+	}
+	for _, player := range r.Header.Players {
+		if got, ok := want[player.Username]; ok && player.Operator != got {
+			t.Fatalf("%s operator = %v, want %v", player.Username, player.Operator, got)
+		}
+	}
+
+	if err := r.Read(); !Ok(err) {
+		t.Fatalf("Read() error = %v", err)
+	}
+	for _, player := range r.Header.Players {
+		if got, ok := want[player.Username]; ok && player.Operator != got {
+			t.Fatalf("%s operator after Read() = %v, want %v", player.Username, player.Operator, got)
+		}
 	}
 }
 

@@ -173,7 +173,9 @@ func readPlayer(r *Reader) error {
 			(r.Header.CodeVersion <= Y7S2 && strings.HasPrefix(p.Username, existing.Username)) {
 			r.Header.Players[i].ProfileID = p.ProfileID
 			r.Header.Players[i].Username = p.Username
-			r.Header.Players[i].Operator = p.Operator
+			if p.Operator != 0 {
+				r.Header.Players[i].Operator = p.Operator
+			}
 			r.Header.Players[i].Spawn = p.Spawn
 			r.Header.Players[i].DissectID = p.DissectID
 			r.Header.Players[i].uiID = p.uiID

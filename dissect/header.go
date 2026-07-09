@@ -518,6 +518,9 @@ func (r *Reader) readHeader() (Header, error) {
 	for i := range h.Players {
 		h.Players[i].gameVersion = h.GameVersion
 	}
+	if h.CodeVersion >= Y11S2 {
+		h.resolveHeaderOperators()
+	}
 	// Parse team scores
 	n, err = strconv.Atoi(props["teamscore0"])
 	if err != nil {

@@ -1,6 +1,10 @@
 package dissect
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+	"unicode"
+)
 
 func operatorSeasonKey(gameVersion string) string {
 	switch {
@@ -22,10 +26,79 @@ func hasSeasonPrefix(gameVersion string, season string) bool {
 	return gameVersion[:len(season)] == season
 }
 
+func operatorNameKey(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch r {
+		case 'Ä', 'Á', 'À', 'Â', 'Ã', 'Å', 'Ā', 'Ă', 'Ą':
+			r = 'A'
+		case 'ä', 'á', 'à', 'â', 'ã', 'å', 'ā', 'ă', 'ą':
+			r = 'a'
+		case 'Ç', 'Ć', 'Ĉ', 'Ċ', 'Č':
+			r = 'C'
+		case 'ç', 'ć', 'ĉ', 'ċ', 'č':
+			r = 'c'
+		case 'É', 'È', 'Ê', 'Ë', 'Ē', 'Ĕ', 'Ė', 'Ę', 'Ě':
+			r = 'E'
+		case 'é', 'è', 'ê', 'ë', 'ē', 'ĕ', 'ė', 'ę', 'ě':
+			r = 'e'
+		case 'Í', 'Ì', 'Î', 'Ï', 'Ĩ', 'Ī', 'Ĭ', 'Į', 'İ':
+			r = 'I'
+		case 'í', 'ì', 'î', 'ï', 'ĩ', 'ī', 'ĭ', 'į', 'ı':
+			r = 'i'
+		case 'Ñ', 'Ń', 'Ņ', 'Ň':
+			r = 'N'
+		case 'ñ', 'ń', 'ņ', 'ň':
+			r = 'n'
+		case 'Ó', 'Ò', 'Ô', 'Õ', 'Ö', 'Ø', 'Ō', 'Ŏ', 'Ő':
+			r = 'O'
+		case 'ó', 'ò', 'ô', 'õ', 'ö', 'ø', 'ō', 'ŏ', 'ő':
+			r = 'o'
+		case 'Ú', 'Ù', 'Û', 'Ü', 'Ũ', 'Ū', 'Ŭ', 'Ů', 'Ű', 'Ų':
+			r = 'U'
+		case 'ú', 'ù', 'û', 'ü', 'ũ', 'ū', 'ŭ', 'ů', 'ű', 'ų':
+			r = 'u'
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToUpper(r))
+		}
+	}
+	return b.String()
+}
+
+func operatorByDisplayName(name string) (Operator, bool) {
+	key := operatorNameKey(name)
+	if key == "" {
+		return 0, false
+	}
+	for op, knownName := range _Operator_map {
+		if operatorNameKey(knownName) == key {
+			return op, true
+		}
+	}
+	return 0, false
+}
+
+func resolveHeaderPlayerOperator(p Player) Operator {
+	if p.Operator != 0 {
+		return p.Operator
+	}
+	if op, ok := operatorByDisplayName(p.RoleName); ok {
+		return op
+	}
+	return p.Operator
+}
+
+func (h *Header) resolveHeaderOperators() {
+	for i := range h.Players {
+		h.Players[i].Operator = resolveHeaderPlayerOperator(h.Players[i])
+	}
+}
+
 func (i Operator) fallbackNameForGameVersion(gameVersion string) string {
 	switch operatorSeasonKey(gameVersion) {
 	case "Y11S2":
-		return Dokkaebi.String()
+		return "Y11S2UnknownOperator"
 	case "Y11S3":
 		return "Y11S3NewDefender"
 	case "Y11S4":
